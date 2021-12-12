@@ -34,6 +34,7 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 	decoder := structure.NewDecoder(structure.Option{TagName: "group", WeaklyTypedInput: true})
 	graph := make(map[string]*graphNode)
 
+	// 这一步是构造图
 	// Step 1.1 build dependency graph
 	for _, mapping := range groupsConfig {
 		option := &outboundgroup.GroupCommonOption{}
@@ -52,6 +53,7 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 			graph[groupName] = &graphNode{0, -1, mapping, 0, option, nil}
 		}
 
+		// proxy 也可以是一个 proxy-group, 因此这里也要把所有的 proxy 作为图顶点参与循环检查
 		for _, proxy := range option.Proxies {
 			if node, ex := graph[proxy]; ex {
 				node.indegree++
@@ -60,6 +62,7 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 			}
 		}
 	}
+
 	// Step 1.2 Topological Sort
 	// topological index of **ProxyGroup**
 	index := 0
@@ -70,10 +73,12 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 			queue = append(queue, name)
 		}
 	}
+
 	// every element in queue have indegree == 0
 	for ; len(queue) > 0; queue = queue[1:] {
 		name := queue[0]
 		node := graph[name]
+
 		if node.option != nil {
 			index++
 			groupsConfig[len(groupsConfig)-index] = node.data
@@ -90,6 +95,7 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 				}
 			}
 		}
+
 		delete(graph, name)
 	}
 
@@ -97,6 +103,9 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 	if len(graph) == 0 {
 		return nil
 	}
+
+	// 下面是检测到环状依赖了
+	// 图中剩下的元素是位于环依赖上面的元素
 
 	// if loop is detected, locate the loop and throw an error
 	// Step 2.1 rebuild the graph, fill `outdegree` and `from` filed
@@ -111,13 +120,15 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 
 		for _, proxy := range node.option.Proxies {
 			node.outdegree++
-			child := graph[proxy]
+			child := graph[proxy] // 记录当前 node 能够到达的下一级节点
 			if child.from == nil {
 				child.from = make([]string, 0, child.indegree)
 			}
 			child.from = append(child.from, name)
 		}
 	}
+
+
 	// Step 2.2 remove nodes outside the loop. so that we have only the loops remain in `graph`
 	queue = make([]string, 0)
 	// initialize queue with node have outdegree == 0
@@ -126,6 +137,7 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 			queue = append(queue, name)
 		}
 	}
+
 	// every element in queue have outdegree == 0
 	for ; len(queue) > 0; queue = queue[1:] {
 		name := queue[0]
@@ -138,11 +150,13 @@ func proxyGroupsDagSort(groupsConfig []map[string]interface{}) error {
 		}
 		delete(graph, name)
 	}
+
 	// Step 2.3 report the elements in loop
 	loopElements := make([]string, 0, len(graph))
 	for name := range graph {
 		loopElements = append(loopElements, name)
 		delete(graph, name)
 	}
+
 	return fmt.Errorf("loop is detected in ProxyGroup, please check following ProxyGroups: %v", loopElements)
 }

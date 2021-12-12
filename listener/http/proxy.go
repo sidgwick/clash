@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"strings"
 	"time"
 
@@ -15,8 +16,10 @@ import (
 	"github.com/Dreamacro/clash/log"
 )
 
+// 这里实际上就是转发到到达 HTTP 请求以获取相应并向客户端发送相应的过程
 func HandleConn(c net.Conn, in chan<- C.ConnContext, cache *cache.Cache) {
-	client := newClient(c.RemoteAddr(), in)
+	rAddr := c.RemoteAddr()
+	client := newClient(rAddr, in)
 	defer client.CloseIdleConnections()
 
 	conn := N.NewBufferedConn(c)
@@ -67,6 +70,10 @@ func HandleConn(c net.Conn, in chan<- C.ConnContext, cache *cache.Cache) {
 			if request.URL.Scheme == "" || request.URL.Host == "" {
 				resp = responseWith(request, http.StatusBadRequest)
 			} else {
+				text, _ := httputil.DumpRequest(request, true)
+				textS := string(text)
+				print(textS)
+
 				resp, err = client.Do(request)
 				if err != nil {
 					resp = responseWith(request, http.StatusBadGateway)

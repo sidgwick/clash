@@ -62,24 +62,33 @@ func SetBindAddress(host string) {
 	bindAddress = host
 }
 
+// ReCreateHTTP 创建 HTTP 请求接收端点
+// 创建监听在 port 的 HTTP 代理, tcpIn 负责转送连接进来的 TCP 链接请求
 func ReCreateHTTP(port int, tcpIn chan<- C.ConnContext) error {
+	// 加锁, 同一时刻只能有一个协程重新创建 HTTP 代理服务器
 	httpMux.Lock()
 	defer httpMux.Unlock()
 
 	addr := genAddr(bindAddress, port, allowLan)
 
+	// 如果之前已经创建过 httpListener
+	// 这里看一下之前的监听地址是否变化, 如果没变则不需要再次创建
 	if httpListener != nil {
 		if httpListener.RawAddress() == addr {
 			return nil
 		}
+
 		httpListener.Close()
 		httpListener = nil
 	}
 
+	// TODO: portIsZero 意味着什么?
+	// 反正 port == 0 无法创建 httpListener
 	if portIsZero(addr) {
 		return nil
 	}
 
+	// 创建 httpListener
 	var err error
 	httpListener, err = http.New(addr, tcpIn)
 	if err != nil {
@@ -325,6 +334,7 @@ func genAddr(host string, port int, allowLan bool) string {
 		if host == "*" {
 			return fmt.Sprintf(":%d", port)
 		}
+
 		return fmt.Sprintf("%s:%d", host, port)
 	}
 

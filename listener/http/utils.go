@@ -27,6 +27,8 @@ func removeHopByHopHeaders(header http.Header) {
 	if len(connections) == 0 {
 		return
 	}
+
+	// RFC 2616 - 14.10 部分要求
 	for _, h := range strings.Split(connections, ",") {
 		header.Del(strings.TrimSpace(h))
 	}
@@ -49,6 +51,7 @@ func removeExtraHTTPHostPort(req *http.Request) {
 }
 
 // parseBasicProxyAuthorization parse header Proxy-Authorization and return base64-encoded credential
+// 代理认证数据
 func parseBasicProxyAuthorization(request *http.Request) string {
 	value := request.Header.Get("Proxy-Authorization")
 	if !strings.HasPrefix(value, "Basic ") {
@@ -59,6 +62,7 @@ func parseBasicProxyAuthorization(request *http.Request) string {
 }
 
 // decodeBasicProxyAuthorization decode base64-encoded credential
+// 解析 Basic 之后的那部分 base64 encoding 的数据, 里面是 ':' 分割的账号密码
 func decodeBasicProxyAuthorization(credential string) (string, string, error) {
 	plain, err := base64.StdEncoding.DecodeString(credential)
 	if err != nil {

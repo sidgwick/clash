@@ -8,10 +8,11 @@ import (
 	C "github.com/Dreamacro/clash/constant"
 )
 
+// HTTP 代理服务器
 type Listener struct {
-	listener net.Listener
-	addr     string
-	closed   bool
+	listener net.Listener // 监听器
+	addr     string // 监听地址
+	closed   bool // 监听器是否关闭
 }
 
 // RawAddress implements C.Listener
@@ -20,6 +21,7 @@ func (l *Listener) RawAddress() string {
 }
 
 // Address implements C.Listener
+// 获取监听器监听地址的字符表示, TODO: 和 l.addr 的区别是?
 func (l *Listener) Address() string {
 	return l.listener.Addr().String()
 }
@@ -49,6 +51,8 @@ func NewWithAuthenticate(addr string, in chan<- C.ConnContext, authenticate bool
 		listener: l,
 		addr:     addr,
 	}
+
+	// 启动监听协程, 处理到达的链接请求
 	go func() {
 		for {
 			conn, err := hl.listener.Accept()
@@ -58,6 +62,8 @@ func NewWithAuthenticate(addr string, in chan<- C.ConnContext, authenticate bool
 				}
 				continue
 			}
+
+			// 每个到达的请求都是在新的协程里面处理的
 			go HandleConn(conn, in, c)
 		}
 	}()

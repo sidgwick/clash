@@ -10,12 +10,13 @@ const Name = "clash"
 
 // Path is used to get the configuration path
 var Path = func() *path {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		homeDir, _ = os.Getwd()
-	}
-
-	homeDir = P.Join(homeDir, ".config", Name)
+	//homeDir, err := os.UserHomeDir()
+	//if err != nil {
+	//	homeDir, _ = os.Getwd()
+	//}
+	//
+	//homeDir = P.Join(homeDir, ".config", Name)
+	homeDir, _ := os.Getwd()
 	return &path{homeDir: homeDir, configFile: "config.yaml"}
 }()
 

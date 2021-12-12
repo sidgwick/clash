@@ -105,6 +105,8 @@ func process() {
 		go processUDP()
 	}
 
+	// 注意 chan 的特性
+	// queue 只要不关闭, 这个 for 循环就不会结束
 	queue := tcpQueue
 	for conn := range queue {
 		go handleTCPConn(conn)
