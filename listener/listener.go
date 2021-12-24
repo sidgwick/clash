@@ -105,6 +105,7 @@ func ReCreateSocks(port int, tcpIn chan<- C.ConnContext, udpIn chan<- *inbound.P
 
 	addr := genAddr(bindAddress, port, allowLan)
 
+	// socks 协议, 支持 TCP/UDP 协议
 	shouldTCPIgnore := false
 	shouldUDPIgnore := false
 
@@ -134,21 +135,26 @@ func ReCreateSocks(port int, tcpIn chan<- C.ConnContext, udpIn chan<- *inbound.P
 		return nil
 	}
 
-	tcpListener, err := socks.New(addr, tcpIn)
-	if err != nil {
-		return err
+	if !shouldTCPIgnore {
+		tcpListener, err := socks.New(addr, tcpIn)
+		if err != nil {
+			return err
+		}
+
+		socksListener = tcpListener
+		log.Infoln("SOCKS proxy TCP listening at: %s", socksListener.Address())
 	}
 
-	udpListener, err := socks.NewUDP(addr, udpIn)
-	if err != nil {
-		tcpListener.Close()
-		return err
+	if !shouldUDPIgnore {
+		udpListener, err := socks.NewUDP(addr, udpIn)
+		if err != nil {
+			return err
+		}
+
+		socksUDPListener = udpListener
+		log.Infoln("SOCKS proxy UDP listening at: %s", socksListener.Address())
 	}
 
-	socksListener = tcpListener
-	socksUDPListener = udpListener
-
-	log.Infoln("SOCKS proxy listening at: %s", socksListener.Address())
 	return nil
 }
 

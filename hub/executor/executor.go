@@ -185,6 +185,7 @@ func updateGeneral(general *config.General, force bool) {
 	tcpIn := tunnel.TCPIn()
 	udpIn := tunnel.UDPIn()
 
+	// 创建 HTTP 代理监听服务器
 	if err := P.ReCreateHTTP(general.Port, tcpIn); err != nil {
 		log.Errorln("Start HTTP server error: %s", err.Error())
 	}
