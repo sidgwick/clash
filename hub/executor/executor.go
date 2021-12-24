@@ -190,10 +190,12 @@ func updateGeneral(general *config.General, force bool) {
 		log.Errorln("Start HTTP server error: %s", err.Error())
 	}
 
+	// 创建 Socks4/5 代理监听服务器
 	if err := P.ReCreateSocks(general.SocksPort, tcpIn, udpIn); err != nil {
 		log.Errorln("Start SOCKS server error: %s", err.Error())
 	}
 
+	//
 	if err := P.ReCreateRedir(general.RedirPort, tcpIn, udpIn); err != nil {
 		log.Errorln("Start Redir server error: %s", err.Error())
 	}

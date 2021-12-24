@@ -68,6 +68,7 @@ func handleSocks(conn net.Conn, in chan<- C.ConnContext) {
 		return
 	}
 
+	// socks 协议第一个字节是版本号
 	switch head[0] {
 	case socks4.Version:
 		HandleSocks4(bufConn, in)
@@ -78,15 +79,18 @@ func handleSocks(conn net.Conn, in chan<- C.ConnContext) {
 	}
 }
 
+
 func HandleSocks4(conn net.Conn, in chan<- C.ConnContext) {
 	addr, _, err := socks4.ServerHandshake(conn, authStore.Authenticator())
 	if err != nil {
 		conn.Close()
 		return
 	}
+
 	if c, ok := conn.(*net.TCPConn); ok {
 		c.SetKeepAlive(true)
 	}
+
 	in <- inbound.NewSocket(socks5.ParseAddr(addr), conn, C.SOCKS4)
 }
 
@@ -96,13 +100,16 @@ func HandleSocks5(conn net.Conn, in chan<- C.ConnContext) {
 		conn.Close()
 		return
 	}
+
 	if c, ok := conn.(*net.TCPConn); ok {
 		c.SetKeepAlive(true)
 	}
+
 	if command == socks5.CmdUDPAssociate {
 		defer conn.Close()
 		io.Copy(io.Discard, conn)
 		return
 	}
+
 	in <- inbound.NewSocket(target, conn, C.SOCKS5)
 }

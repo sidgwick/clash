@@ -52,12 +52,14 @@ func NewUDP(addr string, in chan<- *inbound.PacketAdapter) (*UDPListener, error)
 			buf := pool.Get(pool.UDPBufferSize)
 			n, remoteAddr, err := l.ReadFrom(buf)
 			if err != nil {
+				// TODO: 不正确不去的时候的处理是?
 				pool.Put(buf)
 				if sl.closed {
 					break
 				}
 				continue
 			}
+
 			handleSocksUDP(l, in, buf[:n], remoteAddr)
 		}
 	}()
@@ -65,6 +67,7 @@ func NewUDP(addr string, in chan<- *inbound.PacketAdapter) (*UDPListener, error)
 	return sl, nil
 }
 
+// socks4 不支持 UDP 协议
 func handleSocksUDP(pc net.PacketConn, in chan<- *inbound.PacketAdapter, buf []byte, addr net.Addr) {
 	target, payload, err := socks5.DecodeUDPPacket(buf)
 	if err != nil {
@@ -72,12 +75,14 @@ func handleSocksUDP(pc net.PacketConn, in chan<- *inbound.PacketAdapter, buf []b
 		pool.Put(buf)
 		return
 	}
+
 	packet := &packet{
 		pc:      pc,
 		rAddr:   addr,
 		payload: payload,
 		bufRef:  buf,
 	}
+
 	select {
 	case in <- inbound.NewPacket(target, packet, C.SOCKS5):
 	default:

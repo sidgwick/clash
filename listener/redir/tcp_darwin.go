@@ -39,10 +39,13 @@ func parserPacket(c net.Conn) (socks5.Addr, error) {
 		proto:     syscall.IPPROTO_TCP,
 		direction: PfOut,
 	}
+
 	saddr := c.RemoteAddr().(*net.TCPAddr)
 	daddr := c.LocalAddr().(*net.TCPAddr)
+
 	copy(nl.saddr[:], saddr.IP)
 	copy(nl.daddr[:], daddr.IP)
+
 	nl.sxport[0], nl.sxport[1] = byte(saddr.Port>>8), byte(saddr.Port)
 	nl.dxport[0], nl.dxport[1] = byte(daddr.Port>>8), byte(daddr.Port)
 
