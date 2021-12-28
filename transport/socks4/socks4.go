@@ -40,6 +40,9 @@ var (
 	ErrRequestUnknownCode      = errors.New("request failed with unknown code")
 )
 
+// socks4 协议的结构:
+//
+// 1byte version + 1 byte command + 2bytes dstPort + 4bytes dstIp
 func ServerHandshake(rw io.ReadWriter, authenticator auth.Authenticator) (addr string, command Command, err error) {
 	var req [8]byte
 	if _, err = io.ReadFull(rw, req[:]); err != nil {
@@ -51,6 +54,7 @@ func ServerHandshake(rw io.ReadWriter, authenticator auth.Authenticator) (addr s
 		return
 	}
 
+	// 仅支持 connect 命令
 	if command = req[1]; command != CmdConnect {
 		err = errCommandNotSupported
 		return
@@ -187,6 +191,7 @@ func readUntilNull(r io.Reader) ([]byte, error) {
 	buf := &bytes.Buffer{}
 	var data [1]byte
 
+	// 一次读一个字节, 直到读到了 NULL
 	for {
 		if _, err := r.Read(data[:]); err != nil {
 			return nil, err
