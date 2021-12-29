@@ -49,6 +49,8 @@ type Addr []byte
 func (a Addr) String() string {
 	var host, port string
 
+	// 协议里面的数据是大端字节序的, 这里通过位移把 16bits 的端口号计算出来
+
 	switch a[0] {
 	case AtypDomainName:
 		hostLen := uint16(a[1])
@@ -66,10 +68,12 @@ func (a Addr) String() string {
 }
 
 // UDPAddr converts a socks5.Addr to *net.UDPAddr
+// TODO: 如果 Addr 是 AtypDomainName 的情况呢?
 func (a Addr) UDPAddr() *net.UDPAddr {
 	if len(a) == 0 {
 		return nil
 	}
+
 	switch a[0] {
 	case AtypIPv4:
 		var ip [net.IPv4len]byte
@@ -80,6 +84,7 @@ func (a Addr) UDPAddr() *net.UDPAddr {
 		copy(ip[0:], a[1:1+net.IPv6len])
 		return &net.UDPAddr{IP: net.IP(ip[:]), Port: int(binary.BigEndian.Uint16(a[1+net.IPv6len : 1+net.IPv6len+2]))}
 	}
+
 	// Other Atyp
 	return nil
 }
@@ -108,28 +113,39 @@ type User struct {
 func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, command Command, err error) {
 	// Read RFC 1928 for request and reply structure and sizes.
 	buf := make([]byte, MaxAddrLen)
+
 	// read VER, NMETHODS, METHODS
 	if _, err = io.ReadFull(rw, buf[:2]); err != nil {
 		return
 	}
+
+	// read METHODS
 	nmethods := buf[1]
 	if _, err = io.ReadFull(rw, buf[:nmethods]); err != nil {
 		return
 	}
 
 	// write VER METHOD
+	// 用户名/密码认证: https://www.rfc-editor.org/rfc/rfc1929
 	if authenticator != nil {
+		// 写死的支持 用户名+密码 认证形式 = 0x02
 		if _, err = rw.Write([]byte{5, 2}); err != nil {
 			return
 		}
 
+		// 下面是客户端收到认证方法响应之后, 发送过来的认证内容
+		// https://blog.csdn.net/red10057/article/details/8565011
+
 		// Get header
+		// 第一字节是 VER 字节, 在这里没用
+		// 第二个字节是用户名长度 - ULen
 		header := make([]byte, 2)
 		if _, err = io.ReadFull(rw, header); err != nil {
 			return
 		}
 
 		authBuf := make([]byte, MaxAuthLen)
+
 		// Get username
 		userLen := int(header[1])
 		if userLen <= 0 {
@@ -137,6 +153,7 @@ func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, 
 			err = ErrAuth
 			return
 		}
+
 		if _, err = io.ReadFull(rw, authBuf[:userLen]); err != nil {
 			return
 		}
@@ -146,12 +163,14 @@ func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, 
 		if _, err = rw.Read(header[:1]); err != nil {
 			return
 		}
+
 		passLen := int(header[0])
 		if passLen <= 0 {
 			rw.Write([]byte{1, 1})
 			err = ErrAuth
 			return
 		}
+
 		if _, err = io.ReadFull(rw, authBuf[:passLen]); err != nil {
 			return
 		}
@@ -169,10 +188,13 @@ func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, 
 			return
 		}
 	} else {
+		// 0x00 表示无需认证
 		if _, err = rw.Write([]byte{5, 0}); err != nil {
 			return
 		}
 	}
+
+	// 上面是认证请求完成. 后续开始处理 socks5 定义的 command
 
 	// read VER CMD RSV ATYP DST.ADDR DST.PORT
 	if _, err = io.ReadFull(rw, buf[:3]); err != nil {
@@ -180,7 +202,7 @@ func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, 
 	}
 
 	command = buf[1]
-	addr, err = ReadAddr(rw, buf)
+	addr, err = ReadAddr(rw, buf) // 注意这里从客户端发来的数据里面, 获取到了目标服务器的ip/port信息
 	if err != nil {
 		return
 	}
@@ -188,11 +210,15 @@ func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, 
 	switch command {
 	case CmdConnect, CmdUDPAssociate:
 		// Acquire server listened address info
+		// 这里拿到的是 socks5 proxy server 的地址信息
 		localAddr := ParseAddr(rw.LocalAddr().String())
 		if localAddr == nil {
 			err = ErrAddressNotSupported
 		} else {
 			// write VER REP RSV ATYP BND.ADDR BND.PORT
+			// 这里直接就是写死的连接(到目标服务器, 实际上还没有发起这个链接)成功
+			// BND.ADDR + BND.PORT 本来应该是实际服务器的信息, 这里也被替换成 socks5 proxy 服务器的信息
+			// https://www.seeull.com/archives/24.html
 			_, err = rw.Write(bytes.Join([][]byte{{5, 0, 0}, localAddr}, []byte{}))
 		}
 	case CmdBind:
@@ -205,11 +231,13 @@ func ServerHandshake(rw net.Conn, authenticator auth.Authenticator) (addr Addr, 
 }
 
 // ClientHandshake fast-tracks SOCKS initialization to get target address to connect on client side.
+// TODO: 看一下 UDP 的数据交互
 func ClientHandshake(rw io.ReadWriter, addr Addr, command Command, user *User) (Addr, error) {
 	buf := make([]byte, MaxAddrLen)
 	var err error
 
 	// VER, NMETHODS, METHODS
+	// 响应是否需要认证
 	if user != nil {
 		_, err = rw.Write([]byte{5, 1, 2})
 	} else {
@@ -233,6 +261,7 @@ func ClientHandshake(rw io.ReadWriter, addr Addr, command Command, user *User) (
 			return nil, ErrAuth
 		}
 
+		// -- RFC 1929 --
 		// password protocol version
 		authMsg := &bytes.Buffer{}
 		authMsg.WriteByte(1)
@@ -241,10 +270,12 @@ func ClientHandshake(rw io.ReadWriter, addr Addr, command Command, user *User) (
 		authMsg.WriteByte(uint8(len(user.Password)))
 		authMsg.WriteString(user.Password)
 
+		// 这是给客户端相应的认证信息
 		if _, err := rw.Write(authMsg.Bytes()); err != nil {
 			return nil, err
 		}
 
+		// 获取到客户端对认证信息的处理结果 -- VER STATUS
 		if _, err := io.ReadFull(rw, buf[:2]); err != nil {
 			return nil, err
 		}
@@ -255,6 +286,8 @@ func ClientHandshake(rw io.ReadWriter, addr Addr, command Command, user *User) (
 	} else if buf[1] != 0 {
 		return nil, errors.New("SOCKS need auth")
 	}
+
+	// 上面是认证交互, 搞完了之后开始正式处理指令内容
 
 	// VER, CMD, RSV, ADDR
 	if _, err := rw.Write(bytes.Join([][]byte{{5, command, 0}, addr}, []byte{})); err != nil {
@@ -273,10 +306,14 @@ func ReadAddr(r io.Reader, b []byte) (Addr, error) {
 	if len(b) < MaxAddrLen {
 		return nil, io.ErrShortBuffer
 	}
+
+	// 第一个字节是 地址 类型
 	_, err := io.ReadFull(r, b[:1]) // read 1st byte for address type
 	if err != nil {
 		return nil, err
 	}
+
+	// 注意看里面的 ReadFull 调用都有包含端口的信息
 
 	switch b[0] {
 	case AtypDomainName:
@@ -328,12 +365,14 @@ func SplitAddr(b []byte) Addr {
 }
 
 // ParseAddr parses the address in string s. Returns nil if failed.
+// 组合出来在 socks5 协议中使用的 ATYP + BND.ADDR + BND.PORT 地址
 func ParseAddr(s string) Addr {
 	var addr Addr
 	host, port, err := net.SplitHostPort(s)
 	if err != nil {
 		return nil
 	}
+
 	if ip := net.ParseIP(host); ip != nil {
 		if ip4 := ip.To4(); ip4 != nil {
 			addr = make([]byte, 1+net.IPv4len+2)
@@ -388,13 +427,13 @@ func ParseAddrToSocksAddr(addr net.Addr) Addr {
 		parsed[0] = AtypIPv4
 		copy(parsed[1:], ip4)
 		binary.BigEndian.PutUint16(parsed[1+net.IPv4len:], uint16(port))
-
 	} else {
 		parsed = make([]byte, 1+net.IPv6len+2)
 		parsed[0] = AtypIPv6
 		copy(parsed[1:], hostip)
 		binary.BigEndian.PutUint16(parsed[1+net.IPv6len:], uint16(port))
 	}
+
 	return parsed
 }
 
